@@ -641,7 +641,7 @@
       b.innerHTML =
         '<div class="eyebrow">Question 2 of 4</div>' +
         '<p class="q">Non-billable minutes</p>' +
-        '<p class="qnote">Any minutes from the session you are not counting as billable. They are subtracted from the total above.</p>' +
+        '<p class="qnote">Any minutes from the session you are not counting as billable. They come off the ' + state.total + ' minute total you just entered.</p>' +
         '<input class="numfield" type="number" id="q_nb" min="0" max="' + state.total + '" value="' + state.nonBillable + '"> <span class="minlabel">minutes</span>' +
         '<div class="rowend"><button class="btn ghost" id="back1">Back</button><button class="btn" id="next1">Next</button></div>';
       document.getElementById('back1').onclick = function () { state.step = 0; renderStep(); };
