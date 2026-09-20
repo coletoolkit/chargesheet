@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Distribute a session's billable minutes across billing codes and see the resulting units.">
+<title>Charge Sheet Distributor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  /* base reset (supplied by the host when this ran as an artifact) */
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+  :root {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  body { margin: 0; }
+  img { max-width: 100%; }
+
+  /* Three colours only: WTL red #CE212B, dark grey #333336, white. */
+  :root {
+    --bg: #F1F1F2;
+    --surface: #FFFFFF;
+    --surface-2: #F7F7F8;
+    --ink: #333336;
+    --ink-2: rgba(51, 51, 54, 0.70);
+    --ink-3: rgba(51, 51, 54, 0.46);
+    --line: rgba(51, 51, 54, 0.15);
+    --line-strong: rgba(51, 51, 54, 0.30);
+    --accent: #CE212B;
+    --accent-ink: #CE212B;
+    --accent-soft: rgba(206, 33, 43, 0.09);
+    --ok: #333336;
+    --ok-soft: rgba(51, 51, 54, 0.06);
+    --warn: #CE212B;
+    --warn-soft: rgba(206, 33, 43, 0.09);
+    --focus: #CE212B;
+    --font-ui: 'Archivo', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --font-num: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #222225;
+      --surface: #2C2C30;
+      --surface-2: #333338;
+      --ink: #FFFFFF;
+      --ink-2: rgba(255, 255, 255, 0.72);
+      --ink-3: rgba(255, 255, 255, 0.48);
+      --line: rgba(255, 255, 255, 0.14);
+      --line-strong: rgba(255, 255, 255, 0.30);
+      --accent: #CE212B;
+      --accent-ink: #E4737A;
+      --accent-soft: rgba(206, 33, 43, 0.22);
+      --ok: rgba(255, 255, 255, 0.82);
+      --ok-soft: rgba(255, 255, 255, 0.07);
+      --warn: #E4737A;
+      --warn-soft: rgba(206, 33, 43, 0.20);
+      --focus: #E4737A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #222225;
+    --surface: #2C2C30;
+    --surface-2: #333338;
+    --ink: #FFFFFF;
+    --ink-2: rgba(255, 255, 255, 0.72);
+    --ink-3: rgba(255, 255, 255, 0.48);
+    --line: rgba(255, 255, 255, 0.14);
+    --line-strong: rgba(255, 255, 255, 0.30);
+    --accent: #CE212B;
+    --accent-ink: #E4737A;
+    --accent-soft: rgba(206, 33, 43, 0.22);
+    --ok: rgba(255, 255, 255, 0.82);
+    --ok-soft: rgba(255, 255, 255, 0.07);
+    --warn: #E4737A;
+    --warn-soft: rgba(206, 33, 43, 0.20);
+    --focus: #E4737A;
+  }
+
+  [hidden] { display: none !important; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .wrap {
+    max-width: 800px;
+    margin: 0 auto;
+    padding-inline: 16px;
+    padding-block: 28px 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  h1 {
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .sub { color: var(--ink-2); font-size: 14px; margin: 4px 0 0; text-wrap: pretty; }
+  .eyebrow {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    color: var(--ink-3);
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  button { font-family: inherit; font-size: 14px; cursor: pointer; }
+  .btn {
+    background: var(--accent);
+    color: #fff;
+    border: 1px solid var(--accent);
+    border-radius: 7px;
+    padding: 9px 18px;
+    font-weight: 600;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.ghost {
+    background: transparent;
+    color: var(--ink-2);
+    border-color: var(--line-strong);
+  }
+  .btn.ghost:hover { color: var(--ink); border-color: var(--ink-3); }
+  :is(button, input, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* setup */
+  .steps { display: flex; gap: 6px; margin-bottom: 16px; }
+  .steps i {
+    height: 3px; flex: 1; background: var(--line); border-radius: 2px;
+  }
+  .steps i.on { background: var(--accent); }
+  .q { font-size: 18px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .qnote { color: var(--ink-2); font-size: 13.5px; margin: 0 0 16px; text-wrap: pretty; }
+  .hint, .bank .cap2, .tie p, .statusline, .locked-note, .msg, .otlist label { text-wrap: pretty; }
+  .numfield {
+    font-family: var(--font-num);
+    font-size: 26px;
+    font-weight: 600;
+    width: 130px;
+    padding: 8px 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+  .rowend { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+  .choice { display: flex; gap: 10px; flex-wrap: wrap; }
+  .choice button {
+    flex: 1 1 200px;
+    text-align: left;
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: var(--ink);
+  }
+  .choice button:hover { border-color: var(--accent); }
+  .choice button strong { display: block; font-size: 15px; }
+  .choice button span { color: var(--ink-2); font-size: 13px; }
+  .otlist { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .otlist label { display: flex; gap: 9px; align-items: center; font-size: 14.5px; }
+  .locked-note {
+    background: var(--warn-soft);
+    color: var(--warn);
+    border-radius: 7px;
+    padding: 9px 12px;
+    font-size: 13px;
+    margin-top: 12px;
+  }
+
+  /* summary bar */
+  .setupbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    color: var(--ink-2);
+  }
+  .setupbar b { color: var(--ink); font-family: var(--font-num); font-weight: 600; }
+  .setupbar .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 99px;
+    background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; font-size: 12px;
+  }
+  .editbtn {
+    background: none; border: none; color: var(--accent-ink); font-weight: 600;
+    text-decoration: underline; text-underline-offset: 3px; padding: 0;
+  }
+
+  /* banks */
+  .banks { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 520px) { .banks { grid-template-columns: 1fr; } }
+  .bank {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .bank.done { border-color: var(--ok); background: var(--ok-soft); }
+  .bank .n {
+    font-family: var(--font-num);
+    font-size: 38px;
+    font-weight: 600;
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .bank .cap2 { color: var(--ink-2); font-size: 12.5px; margin-top: 4px; }
+  .statusline {
+    font-size: 13.5px; color: var(--ink-2);
+    display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  }
+  .tag {
+    font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; padding: 3px 8px; border-radius: 99px;
+  }
+  .tag.ok { background: var(--ok-soft); color: var(--ok); }
+  .tag.open { background: var(--accent-soft); color: var(--accent-ink); }
+
+  /* codes */
+  .codes { display: flex; flex-direction: column; gap: 0; }
+  .code {
+    border-bottom: 1px solid var(--line);
+    padding: 14px 0;
+  }
+  .code:first-child { border-top: 1px solid var(--line); }
+  .code.off .cname { color: var(--ink-3); }
+  .code.blocked { opacity: 0.55; }
+  .code-head { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+  .check { display: flex; align-items: center; gap: 10px; cursor: pointer; min-width: 0; }
+  .check input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+  .cname { font-weight: 600; font-size: 15.5px; }
+  .cpt { font-family: var(--font-num); font-size: 12px; color: var(--ink-3); }
+  .reason { font-size: 12px; color: var(--warn); }
+  .reason:not(:empty)::before { content: '\00b7\00a0'; color: var(--ink-3); }
+  .code-units { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+  .code-units .u {
+    font-family: var(--font-num); font-size: 21px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .code-units .ul { font-size: 12.5px; color: var(--ink-2); }
+  .capflag {
+    font-size: 11px; color: var(--ink-3); border: 1px solid var(--line-strong);
+    border-radius: 99px; padding: 1px 7px;
+  }
+  .capflag.hit { color: var(--accent-ink); border-color: var(--accent-ink); background: var(--accent-soft); }
+  .code-body { margin-top: 12px; display: flex; flex-direction: column; gap: 9px; }
+  .sliderow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .trackwrap { position: relative; flex: 1 1 200px; min-width: 140px; display: flex; align-items: center; }
+  input[type=range] {
+    width: 100%; accent-color: var(--accent); height: 22px; margin: 0;
+    position: relative; z-index: 2;
+  }
+  .limit {
+    position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+    height: 7px; border-radius: 4px; pointer-events: none; z-index: 1;
+    background: repeating-linear-gradient(135deg, var(--line-strong) 0 3px, transparent 3px 6px);
+    border: 1px solid var(--line);
+  }
+  .limit:not(.show) { display: none; }
+  .nudge { display: flex; align-items: center; gap: 4px; }
+  .nudge button {
+    width: 30px; height: 30px; border-radius: 7px;
+    border: 1px solid var(--line-strong); background: var(--surface-2);
+    color: var(--ink); font-size: 16px; line-height: 1; font-weight: 600;
+  }
+  .nudge button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
+  .nudge button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .minbox {
+    font-family: var(--font-num); font-variant-numeric: tabular-nums;
+    width: 58px; text-align: center; font-size: 15px; font-weight: 600;
+    padding: 5px 4px; border: 1px solid var(--line-strong); border-radius: 7px;
+    background: var(--surface); color: var(--ink);
+  }
+  .minlabel { font-size: 12.5px; color: var(--ink-2); }
+  .hint { font-size: 12.5px; color: var(--ink-2); }
+  .hint.warn { color: var(--warn); }
+  .fixedtag {
+    font-size: 12px; color: var(--ink-2); background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px;
+  }
+  .targets { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
+  .targets button {
+    border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--ink);
+    border-radius: 6px; width: 26px; height: 26px; font-weight: 600; line-height: 1;
+  }
+  .targets button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* tie */
+  .tie {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    padding: 15px 16px;
+  }
+  .tie h3 { margin: 0 0 5px; font-size: 15.5px; color: var(--accent-ink); }
+  .tie p { margin: 0 0 12px; font-size: 13.5px; color: var(--ink-2); }
+  .tie .opts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tie .opts button {
+    background: var(--surface); border: 1px solid var(--accent);
+    color: var(--accent-ink); border-radius: 7px; padding: 8px 16px; font-weight: 600;
+  }
+  .tie .opts button:hover { background: var(--accent); color: #fff; }
+
+  /* sheet */
+  .sheet { font-family: var(--font-num); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .sheet table { width: 100%; border-collapse: collapse; }
+  .sheet td { padding: 5px 0; }
+  .sheet td:nth-child(2), .sheet td:nth-child(3) { text-align: right; width: 78px; }
+  .sheet tr.total td { border-top: 1px solid var(--line-strong); font-weight: 600; padding-top: 8px; }
+  .sheet .zero td { color: var(--warn); }
+
+  details.working { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+  details.working summary {
+    cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--ink-2);
+  }
+  details.working summary:hover { color: var(--ink); }
+  .worklist {
+    margin: 12px 0 0; padding: 0; list-style: none;
+    display: flex; flex-direction: column; gap: 7px;
+    font-size: 13px; color: var(--ink-2); text-wrap: pretty;
+  }
+  .worklist li { padding-left: 14px; position: relative; }
+  .worklist li::before {
+    content: ''; position: absolute; left: 0; top: 8px;
+    width: 5px; height: 5px; border-radius: 50%; background: var(--line-strong);
+  }
+  .worklist li.head { font-weight: 600; color: var(--ink); padding-left: 0; margin-top: 4px; }
+  .worklist li.head::before { display: none; }
+  details.ref { border-top: 1px solid var(--line); padding-top: 14px; }
+  details.ref summary {
+    cursor: pointer; font-weight: 600; font-size: 14px; color: var(--ink-2);
+  }
+  details.ref summary:hover { color: var(--ink); }
+  .reftables { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 14px; }
+  @media (max-width: 520px) { .reftables { grid-template-columns: 1fr; } }
+  .reftables table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .reftables th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--ink-3); font-weight: 600; padding-bottom: 6px; border-bottom: 1px solid var(--line);
+  }
+  .reftables td { padding: 4px 0; border-bottom: 1px solid var(--line); }
+  .reftables td:last-child { text-align: right; font-family: var(--font-num); }
+  .msg {
+    font-size: 13px; padding: 9px 12px; border-radius: 7px;
+    background: var(--warn-soft); color: var(--warn);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .tie { animation: pop 160ms ease-out; }
+    @keyframes pop { from { transform: translateY(-3px); opacity: 0; } }
+  }
+
+  /* WTL variant: the red carries the working screen, not just the buttons */
+  header { border-bottom: 3px solid var(--accent); padding-bottom: 16px; }
+  .bank .n { color: var(--accent); }
+  .bank.done .n { color: var(--ink); }
+  .code-units .u { color: var(--accent); }
+  .code.off .code-units .u { color: var(--ink-3); }
+  .sheet tr.total td { color: var(--accent); border-top-color: var(--accent); }
+  .tag.open { background: var(--accent); color: #FFFFFF; }
+  .tag.ok { background: transparent; color: var(--ink-2); border: 1px solid var(--line-strong); }
+  .card .eyebrow, .banks .eyebrow { color: var(--ink-2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Charge Sheet Distributor</h1>
+    <p class="sub">Hand a session's billable minutes out across codes and see what the split comes to in units.</p>
+  </header>
+
+  <!-- SETUP -->
+  <section class="card" id="setup">
+    <div class="steps" id="steps"></div>
+    <div id="stepBody"></div>
+  </section>
+
+  <!-- CALCULATOR -->
+  <section id="calc" hidden style="display:flex;flex-direction:column;gap:20px">
+    <div class="setupbar" id="setupbar"></div>
+
+    <div class="banks">
+      <div class="bank" id="bankMin">
+        <div class="eyebrow">Minutes in bank</div>
+        <div class="n" id="bankMinN">0</div>
+        <div class="cap2" id="bankMinCap"></div>
+      </div>
+      <div class="bank" id="bankUnit">
+        <div class="eyebrow" id="bankUnitLabel">Units so far</div>
+        <div class="n" id="bankUnitN">0</div>
+        <div class="cap2" id="bankUnitCap"></div>
+      </div>
+    </div>
+
+    <div class="statusline" id="statusline"></div>
+
+    <div id="tieSlot"></div>
+
+    <div class="codes" id="codes"></div>
+
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:10px">Charge sheet order</div>
+      <div class="sheet" id="sheet"></div>
+      <div id="sheetNote"></div>
+      <details class="working" id="working">
+        <summary>Show how this was worked out</summary>
+        <div id="workingBody"></div>
+      </details>
+    </div>
+
+    <details class="ref">
+      <summary>Settings this tool uses</summary>
+      <div class="reftables">
+        <div>
+          <table>
+            <thead><tr><th>Total timed minutes</th><th>Units</th></tr></thead>
+            <tbody id="refBands"></tbody>
+          </table>
+        </div>
+        <div>
+          <table>
+            <thead><tr><th>Code</th><th>Unit cap</th></tr></thead>
+            <tbody id="refCaps"></tbody>
+          </table>
+        </div>
+      </div>
+      <p class="sub" style="margin-top:14px">The unit limits above are applied separately from the minute table. Checking a code starts it at 8 minutes and it will not go lower. Electrical Stim. (Attended) is held at 10 minutes and 1 unit and is left out of the unit split.</p>
+    </details>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var CODES = [
+    { key: 'therex',  label: 'TherEx',  cpt: '97110', cap: 6, fixed: null, full: 'Therapeutic Exercise' },
+    { key: 'neuro',   label: 'Neuro',   cpt: '97112', cap: 4, fixed: null, full: 'Neuromuscular Re-education' },
+    { key: 'gait',    label: 'Gait',    cpt: '97116', cap: 4, fixed: null, full: 'Gait Training' },
+    { key: 'manual',  label: 'Manual',  cpt: '97140', cap: 6, fixed: null, full: 'Manual Therapy' },
+    { key: 'theract', label: 'TherAct', cpt: '97530', cap: 6, fixed: null, full: 'Therapeutic Activity' },
+    { key: 'estim',   label: 'Electrical Stim. (Attended)', cpt: '97032', cap: 1, fixed: { min: 10, units: 1 }, full: 'Attended electrical stimulation' }
+  ];
+  var MIN_FLOOR = 8;
+
+  var state = {
+    step: 0,
+    total: 60,
+    nonBillable: 0,
+    payer: null,
+    otTreated: null,
+    otCodes: {},
+    checked: {},
+    minutes: {},
+    tieChoices: [],
+    message: ''
+  };
+
+  /* ---------- rules ---------- */
+  function bandUnits(min) {
+    if (min < MIN_FLOOR) return 0;
+    return Math.floor((min + 7) / 15);
+  }
+  function maxMinutesFor(units) { return units * 15 + 7; }
+  function minMinutesFor(units) { return units <= 0 ? 0 : units * 15 - 7; }
+  function billable() { return Math.max(0, state.total - state.nonBillable); }
+  function codeByKey(k) { for (var i = 0; i < CODES.length; i++) if (CODES[i].key === k) return CODES[i]; return null; }
+  function assignedMinutes() {
+    var s = 0;
+    CODES.forEach(function (c) { if (state.checked[c.key]) s += state.minutes[c.key] || 0; });
+    return s;
+  }
+  function bankMinutes() { return billable() - assignedMinutes(); }
+  function isBlocked(c) {
+    if (state.otTreated && state.otCodes[c.key]) return 'OT is billing this today';
+    return null;
+  }
+
+  // Medicare: full blocks first, then largest remainder, 8 min floor, caps respected.
+  function allocateMedicare(tieChoices) {
+    var entries = CODES.filter(function (c) { return state.checked[c.key] && !c.fixed; })
+      .map(function (c) { return { key: c.key, cap: c.cap, min: state.minutes[c.key] || 0 }; });
+    var pool = entries.reduce(function (s, e) { return s + e.min; }, 0);
+    var budget = bandUnits(pool);
+    var units = {}, rem = {}, log = [];
+
+    log.push('Minutes going into the split: ' + pool + ' (' +
+      entries.map(function (e) { return codeByKey(e.key).label + ' ' + e.min; }).join(', ') + ').');
+    log.push('' + pool + ' minutes sits in the ' + minMinutesFor(budget) + ' to ' + maxMinutesFor(budget) +
+      ' minute row, so this session comes to ' + budget + ' unit' + (budget === 1 ? '' : 's') + ' in total.');
+
+    entries.forEach(function (e) {
+      var blocks = Math.floor(e.min / 15);
+      units[e.key] = Math.min(blocks, e.cap);
+      rem[e.key] = e.min - blocks * 15;
+      log.push('' + codeByKey(e.key).label + ': ' + e.min + ' min holds ' + blocks +
+        ' whole 15 minute block' + (blocks === 1 ? '' : 's') + ' (' + (blocks * 15) + ' min), with ' + rem[e.key] + ' min left over.');
+    });
+
+    var used = entries.reduce(function (s, e) { return s + units[e.key]; }, 0);
+    var left = budget - used;
+    var queue = tieChoices.slice();
+    var pending = null;
+
+    log.push('Whole blocks account for ' + used + ' of the ' + budget + ' units. ' +
+      (left === 0 ? 'Nothing is left to hand out.' : left + ' unit' + (left === 1 ? '' : 's') + ' still to place, given to the biggest leftovers.'));
+
+    while (left > 0) {
+      var capped = entries.filter(function (e) { return units[e.key] >= e.cap && rem[e.key] >= 0; });
+      capped.forEach(function (e) {
+        log.push('' + codeByKey(e.key).label + ' is already at its ' + e.cap + ' unit limit, so it is skipped.');
+      });
+      var eligible = entries.filter(function (e) {
+        return e.min >= MIN_FLOOR && units[e.key] < e.cap && rem[e.key] >= 0;
+      });
+      if (!eligible.length) break;
+      var top = Math.max.apply(null, eligible.map(function (e) { return rem[e.key]; }));
+      var cands = eligible.filter(function (e) { return rem[e.key] === top; });
+      var pick;
+      if (cands.length === 1 || cands.length <= left) {
+        pick = cands[0];
+        log.push('Biggest leftover is ' + codeByKey(pick.key).label + ' with ' + top + ' min, so it takes a unit.');
+      } else {
+        var chosen = queue.shift();
+        var match = null;
+        cands.forEach(function (c) { if (c.key === chosen) match = c; });
+        if (match) {
+          pick = match;
+          log.push('' + cands.map(function (c) { return codeByKey(c.key).label; }).join(' and ') +
+            ' were tied at ' + top + ' min. You gave the unit to ' + codeByKey(pick.key).label + '.');
+        } else {
+          pending = { candidates: cands.map(function (c) { return c.key; }), leftover: top };
+          log.push('' + cands.map(function (c) { return codeByKey(c.key).label; }).join(' and ') +
+            ' are tied at ' + top + ' min, waiting on your pick.');
+          break;
+        }
+      }
+      units[pick.key] += 1;
+      rem[pick.key] = -1;
+      left -= 1;
+    }
+
+    if (!pending && left > 0) {
+      log.push('' + left + ' unit' + (left === 1 ? '' : 's') + ' could not be placed, because every code is at its limit.');
+    }
+    if (!pending) {
+      var ok = true;
+      entries.forEach(function (e) {
+        if (units[e.key] > Math.min(bandUnits(e.min), e.cap)) ok = false;
+      });
+      log.push('Check: ' + (ok
+        ? 'no code came out higher than its own minutes give on their own.'
+        : 'a code came out higher than its own minutes give on their own, which should not happen. Worth reporting.'));
+    }
+    return { units: units, budget: budget, unassigned: left, pending: pending, log: log };
+  }
+
+  function allocateOther() {
+    var units = {}, log = [];
+    CODES.forEach(function (c) {
+      if (!state.checked[c.key] || c.fixed) return;
+      var m = state.minutes[c.key] || 0;
+      var raw = bandUnits(m);
+      units[c.key] = Math.min(raw, c.cap);
+      log.push(c.label + ': ' + m + ' min sits in the ' + minMinutesFor(raw) + ' to ' + maxMinutesFor(raw) +
+        ' minute row, so ' + raw + ' unit' + (raw === 1 ? '' : 's') + '.' +
+        (raw > c.cap ? ' Held at ' + c.cap + ', its limit here.' : ''));
+    });
+    if (log.length) log.unshift('Each code is worked out on its own, with no minutes shared between them.');
+    return { units: units, budget: null, unassigned: 0, pending: null, log: log };
+  }
+
+  function allocate() {
+    var r = state.payer === 'medicare' ? allocateMedicare(state.tieChoices) : allocateOther();
+    CODES.forEach(function (c) {
+      if (c.fixed && state.checked[c.key]) {
+        r.units[c.key] = c.fixed.units;
+        r.log.push(c.label + ' is held at ' + c.fixed.min + ' minutes and ' + c.fixed.units +
+          ' unit, and is not part of the working above.');
+      }
+    });
+    return r;
+  }
+
+  function totalUnits(r) {
+    var t = 0;
+    for (var k in r.units) t += r.units[k];
+    return t;
+  }
+
+  // Highest minute value this code may hold right now.
+  function ceilingFor(c) {
+    var capCeiling = maxMinutesFor(c.cap);
+    var available = (state.minutes[c.key] || 0) + bankMinutes();
+    return Math.min(capCeiling, available);
+  }
+
+  /* ---------- setup ---------- */
+  var STEP_COUNT = 4;
+
+  function renderSteps() {
+    var h = '';
+    for (var i = 0; i < STEP_COUNT; i++) h += '<i class="' + (i <= state.step ? 'on' : '') + '"></i>';
+    document.getElementById('steps').innerHTML = h;
+  }
+
+  function renderStep() {
+    renderSteps();
+    var b = document.getElementById('stepBody');
+    var s = state.step;
+    if (s === 0) {
+      b.innerHTML =
+        '<div class="eyebrow">Question 1 of 4</div>' +
+        '<p class="q">Total session time</p>' +
+        '<p class="qnote">In and out, in minutes. Everything else reconciles against this number.</p>' +
+        '<input class="numfield" type="number" id="q_total" min="1" max="480" value="' + state.total + '"> <span class="minlabel">minutes</span>' +
+        '<div class="rowend"><button class="btn" id="next0">Next</button></div>';
+      document.getElementById('next0').onclick = function () {
+        var v = parseInt(document.getElementById('q_total').value, 10);
+        if (!v || v < 1) { return; }
+        state.total = v; state.step = 1; renderStep();
+      };
+    } else if (s === 1) {
+      b.innerHTML =
+        '<div class="eyebrow">Question 2 of 4</div>' +
+        '<p class="q">Non-billable minutes</p>' +
+        '<p class="qnote">Any minutes from the session you are not counting as billable. They are subtracted from the total above.</p>' +
+        '<input class="numfield" type="number" id="q_nb" min="0" max="' + state.total + '" value="' + state.nonBillable + '"> <span class="minlabel">minutes</span>' +
+        '<div class="rowend"><button class="btn ghost" id="back1">Back</button><button class="btn" id="next1">Next</button></div>';
+      document.getElementById('back1').onclick = function () { state.step = 0; renderStep(); };
+      document.getElementById('next1').onclick = function () {
+        var v = parseInt(document.getElementById('q_nb').value, 10);
+        if (isNaN(v) || v < 0) v = 0;
+        if (v >= state.total) v = state.total - 1;
+        state.nonBillable = v; state.step = 2; renderStep();
+      };
+    } else if (s === 2) {
+      b.innerHTML =
+        '<div class="eyebrow">Question 3 of 4</div>' +
+        '<p class="q">Which payer?</p>' +
+        '<p class="qnote">This changes how the tool works out units.</p>' +
+        '<div class="choice">' +
+        '<button id="p_mc"><strong>Medicare</strong><span>Minutes are added together first</span></button>' +
+        '<button id="p_ot"><strong>Non-Medicare</strong><span>Each code is worked out on its own</span></button>' +
+        '</div>' +
+        '<div class="rowend"><button class="btn ghost" id="back2">Back</button></div>';
+      document.getElementById('p_mc').onclick = function () { state.payer = 'medicare'; state.step = 3; renderStep(); };
+      document.getElementById('p_ot').onclick = function () { state.payer = 'other'; state.step = 3; renderStep(); };
+      document.getElementById('back2').onclick = function () { state.step = 1; renderStep(); };
+    } else {
+      var boxes = CODES.filter(function (c) { return !c.fixed; }).map(function (c) {
+        return '<label><input type="checkbox" class="otbox" data-k="' + c.key + '"' +
+          (state.otCodes[c.key] ? ' checked' : '') + '> ' + c.label + ' <span class="cpt">' + c.cpt + '</span>' +
+          '</label>';
+      }).join('');
+      b.innerHTML =
+        '<div class="eyebrow">Question 4 of 4</div>' +
+        '<p class="q">Did OT treat this client today?</p>' +
+        '<p class="qnote">Codes you name here are switched off in the calculator.</p>' +
+        '<div class="choice" style="margin-bottom:14px">' +
+        '<button id="ot_yes"><strong>Yes, OT treated</strong><span>Pick the codes OT is billing</span></button>' +
+        '<button id="ot_no"><strong>No OT today</strong><span>Every code stays available</span></button>' +
+        '</div>' +
+        (state.otTreated === true
+          ? '<div style="margin-top:4px"><div class="eyebrow" style="margin-bottom:8px">Which codes is OT billing today?</div><div class="otlist">' + boxes + '</div>' +
+            '<p class="qnote" style="margin-top:10px">Check every code OT is using today. Those codes will be switched off in the calculator.</p></div>'
+          : '') +
+        (state.otTreated === null ? ''
+          : '<div class="rowend"><button class="btn ghost" id="back3">Back</button><button class="btn" id="go">Open the calculator</button></div>');
+      document.getElementById('ot_yes').onclick = function () { state.otTreated = true; renderStep(); };
+      document.getElementById('ot_no').onclick = function () { state.otTreated = false; state.otCodes = {}; renderStep(); };
+      if (state.otTreated !== null) {
+        Array.prototype.forEach.call(b.querySelectorAll('.otbox'), function (el) {
+          el.onchange = function () { state.otCodes[el.getAttribute('data-k')] = el.checked; };
+        });
+        document.getElementById('back3').onclick = function () { state.step = 2; renderStep(); };
+        document.getElementById('go').onclick = function () { openCalc(); };
+      }
+    }
+  }
+
+  function openCalc() {
+    document.getElementById('setup').hidden = true;
+    document.getElementById('calc').hidden = false;
+    buildCodeRows();
+    render();
+  }
+
+  /* ---------- code rows ---------- */
+  function buildCodeRows() {
+    var host = document.getElementById('codes');
+    host.innerHTML = CODES.map(function (c) {
+      return '' +
+        '<div class="code off" data-k="' + c.key + '" id="row-' + c.key + '">' +
+          '<div class="code-head">' +
+            '<label class="check" for="chk-' + c.key + '">' +
+              '<input type="checkbox" id="chk-' + c.key + '">' +
+              '<span class="cname">' + c.label + '</span>' +
+              '<span class="cpt">' + c.cpt + '</span>' +
+              '<span class="reason" id="rsn-' + c.key + '"></span>' +
+            '</label>' +
+            '<div class="code-units">' +
+              '<span class="capflag" id="cap-' + c.key + '">cap ' + c.cap + '</span>' +
+              '<span class="u" id="u-' + c.key + '">0</span><span class="ul" id="ul-' + c.key + '">units</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="code-body" id="body-' + c.key + '" hidden>' +
+            (c.fixed
+              ? '<div class="fixedtag">Fixed at ' + c.fixed.min + ' minutes and ' + c.fixed.units + ' unit. Not adjustable.</div>'
+              : '<div class="sliderow">' +
+                  '<div class="trackwrap">' +
+                    '<input type="range" id="rng-' + c.key + '" min="' + MIN_FLOOR + '" max="' + maxMinutesFor(c.cap) + '" step="1" value="' + MIN_FLOOR + '">' +
+                    '<span class="limit" id="lim-' + c.key + '"></span>' +
+                  '</div>' +
+                  '<div class="nudge">' +
+                    '<button type="button" id="dn-' + c.key + '" aria-label="One minute less">&minus;</button>' +
+                    '<input class="minbox" type="number" id="num-' + c.key + '" min="' + MIN_FLOOR + '" max="' + maxMinutesFor(c.cap) + '" value="' + MIN_FLOOR + '">' +
+                    '<button type="button" id="up-' + c.key + '" aria-label="One minute more">+</button>' +
+                    '<span class="minlabel">min</span>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="targets" id="tg-' + c.key + '" hidden>Target units:' +
+                  '<button type="button" id="tdn-' + c.key + '">&minus;</button>' +
+                  '<span id="tval-' + c.key + '">1</span>' +
+                  '<button type="button" id="tup-' + c.key + '">+</button>' +
+                '</div>') +
+            '<div class="hint" id="hint-' + c.key + '"></div>' +
+          '</div>' +
+        '</div>';
+    }).join('');
+
+    CODES.forEach(function (c) {
+      document.getElementById('chk-' + c.key).onchange = function (e) { toggleCode(c, e.target.checked); };
+      if (c.fixed) return;
+      document.getElementById('rng-' + c.key).oninput = function (e) { setMinutes(c, parseInt(e.target.value, 10)); };
+      document.getElementById('num-' + c.key).onchange = function (e) { setMinutes(c, parseInt(e.target.value, 10)); };
+      document.getElementById('up-' + c.key).onclick = function () { setMinutes(c, (state.minutes[c.key] || 0) + 1); };
+      document.getElementById('dn-' + c.key).onclick = function () { setMinutes(c, (state.minutes[c.key] || 0) - 1); };
+      document.getElementById('tup-' + c.key).onclick = function () { nudgeTarget(c, 1); };
+      document.getElementById('tdn-' + c.key).onclick = function () { nudgeTarget(c, -1); };
+    });
+  }
+
+  function toggleCode(c, on) {
+    state.message = '';
+    state.tieChoices = [];
+    if (on) {
+      var blocked = isBlocked(c);
+      if (blocked) {
+        state.message = c.label + ' cannot be used today. ' + blocked + '.';
+        document.getElementById('chk-' + c.key).checked = false;
+        render();
+        return;
+      }
+      var need = c.fixed ? c.fixed.min : MIN_FLOOR;
+      if (bankMinutes() < need) {
+        state.message = 'Not enough minutes left for ' + c.label + '. It needs ' + need +
+          ' and the bank holds ' + bankMinutes() + '. Reduce another code first.';
+        document.getElementById('chk-' + c.key).checked = false;
+        render();
+        return;
+      }
+      state.checked[c.key] = true;
+      state.minutes[c.key] = need;
+    } else {
+      state.checked[c.key] = false;
+      state.minutes[c.key] = 0;
+    }
+    render();
+  }
+
+  function setMinutes(c, val) {
+    state.message = '';
+    state.tieChoices = [];
+    if (isNaN(val)) val = state.minutes[c.key] || MIN_FLOOR;
+    var ceiling = ceilingFor(c);
+    if (val < MIN_FLOOR) {
+      val = MIN_FLOOR;
+      state.message = 'This tool keeps every checked code at 8 minutes or more. Uncheck ' + c.label + ' to remove it.';
+    }
+    if (val > ceiling) {
+      if (ceiling === maxMinutesFor(c.cap)) {
+        state.message = c.label + ' stops at ' + ceiling + ' minutes here, which is the most this tool allows for its ' +
+          c.cap + ' unit setting.';
+      } else {
+        state.message = 'The bank is empty. Lower another code to free up minutes for ' + c.label + '.';
+      }
+      val = ceiling;
+    }
+    state.minutes[c.key] = val;
+    render();
+  }
+
+  function nudgeTarget(c, d) {
+    var cur = Math.min(bandUnits(state.minutes[c.key] || 0), c.cap);
+    var want = cur + d;
+    if (want < 1) want = 1;
+    if (want > c.cap) { setMinutes(c, maxMinutesFor(c.cap)); return; }
+    setMinutes(c, Math.max(MIN_FLOOR, minMinutesFor(want)));
+  }
+
+  /* ---------- render ---------- */
+  function render() {
+    var bank = bankMinutes();
+    var bill = billable();
+    var medicare = state.payer === 'medicare';
+    var done = bank === 0 && assignedMinutes() > 0;
+    var showUnits = !medicare || done;
+    var result = showUnits ? allocate() : { units: {}, budget: null, unassigned: 0, pending: null };
+
+    // setup bar
+    document.getElementById('setupbar').innerHTML =
+      '<div><b>' + bill + '</b> billable min ' +
+      '<span style="color:var(--ink-3)">(' + state.total + ' total' +
+      (state.nonBillable ? ', ' + state.nonBillable + ' non-billable' : '') + ')</span>' +
+      ' &nbsp;<span class="pill">' + (state.payer === 'medicare' ? 'Medicare' : 'Non-Medicare') + '</span>' +
+      (state.otTreated ? ' &nbsp;<span class="pill">OT day</span>' : '') +
+      '</div><button class="editbtn" id="editSetup">Change setup</button>';
+    document.getElementById('editSetup').onclick = function () {
+      state.step = 0;
+      document.getElementById('calc').hidden = true;
+      document.getElementById('setup').hidden = false;
+      renderStep();
+    };
+
+    // banks
+    var bmEl = document.getElementById('bankMin');
+    bmEl.className = 'bank' + (done ? ' done' : '');
+    document.getElementById('bankMinN').textContent = bank;
+    document.getElementById('bankMinCap').textContent = done
+      ? 'All placed.'
+      : 'Still to hand out.';
+
+    if (medicare) {
+      document.getElementById('bankUnitLabel').textContent = 'Units at this total';
+      document.getElementById('bankUnitN').textContent = bandUnits(bill);
+      document.getElementById('bankUnitCap').textContent =
+        'What ' + bill + ' minutes comes to. Splitting them differently does not change this number.';
+    } else {
+      document.getElementById('bankUnitLabel').textContent = 'Units so far';
+      document.getElementById('bankUnitN').textContent = totalUnits(result);
+      document.getElementById('bankUnitCap').textContent = 'Each code is counted on its own, so this grows as you add minutes.';
+    }
+
+    // status
+    var status = '<span class="tag ' + (done ? 'ok' : 'open') + '">' + (done ? 'Done' : 'In progress') + '</span>';
+    if (done) {
+      status += '<span>All ' + bill + ' minutes are placed.</span>';
+    } else {
+      status += '<span>' + assignedMinutes() + ' of ' + bill + ' minutes placed.' +
+        (medicare ? ' Units appear once the bank reaches zero.' : '') + '</span>';
+      var capacity = Math.floor(bank / MIN_FLOOR);
+      status += '<span style="color:var(--ink-3)">Room for ' + capacity + ' more code' + (capacity === 1 ? '' : 's') + '.</span>';
+    }
+    document.getElementById('statusline').innerHTML = status;
+
+    // tie prompt
+    var tieSlot = document.getElementById('tieSlot');
+    if (result.pending) {
+      var names = result.pending.candidates.map(function (k) { return codeByKey(k).label; });
+      tieSlot.innerHTML =
+        '<div class="tie"><h3>One unit left, two codes tied</h3>' +
+        '<p>' + names.join(' and ') + ' have an equal claim to the last unit, so it is your call. Pick one, or change a code by a minute or two and the tie goes away on its own.</p>' +
+        '<div class="opts">' + result.pending.candidates.map(function (k) {
+          return '<button type="button" data-k="' + k + '">Give it to ' + codeByKey(k).label + '</button>';
+        }).join('') + '</div></div>';
+      Array.prototype.forEach.call(tieSlot.querySelectorAll('button'), function (btn) {
+        btn.onclick = function () {
+          state.tieChoices.push(btn.getAttribute('data-k'));
+          render();
+        };
+      });
+    } else {
+      tieSlot.innerHTML = '';
+    }
+
+    // rows
+    CODES.forEach(function (c) {
+      var row = document.getElementById('row-' + c.key);
+      var on = !!state.checked[c.key];
+      var blocked = isBlocked(c);
+      var chk = document.getElementById('chk-' + c.key);
+      var u = result.units[c.key] || 0;
+
+      row.className = 'code' + (on ? '' : ' off') + (blocked ? ' blocked' : '');
+      document.getElementById('body-' + c.key).hidden = !on;
+      chk.checked = on;
+      chk.disabled = !!blocked || (!on && bank < (c.fixed ? c.fixed.min : MIN_FLOOR));
+
+      var uEl = document.getElementById('u-' + c.key);
+      var ulEl = document.getElementById('ul-' + c.key);
+      var capEl = document.getElementById('cap-' + c.key);
+
+      if (showUnits) {
+        uEl.textContent = u;
+        ulEl.textContent = u === 1 ? 'unit' : 'units';
+        capEl.className = 'capflag' + (on && u >= c.cap ? ' hit' : '');
+        capEl.textContent = on && u >= c.cap ? 'at its limit' : 'max ' + c.cap + (c.cap === 1 ? ' unit' : ' units');
+      } else {
+        uEl.textContent = '';
+        ulEl.textContent = '';
+        var atMax = on && !c.fixed && (state.minutes[c.key] || 0) >= maxMinutesFor(c.cap);
+        capEl.className = 'capflag' + (atMax ? ' hit' : '');
+        capEl.textContent = c.fixed ? 'fixed' : (atMax ? 'at its limit' : 'max ' + maxMinutesFor(c.cap) + ' min');
+      }
+
+      var hint = document.getElementById('hint-' + c.key);
+      var rsn = document.getElementById('rsn-' + c.key);
+      rsn.textContent = blocked ? blocked : '';
+      if (blocked || !on) { hint.textContent = ''; return; }
+
+      if (c.fixed) {
+        hint.className = 'hint';
+        hint.textContent = 'Does not compete for remainder units.';
+        return;
+      }
+
+      var m = state.minutes[c.key] || 0;
+      var ceiling = ceilingFor(c);
+      var hardMax = maxMinutesFor(c.cap);
+      document.getElementById('rng-' + c.key).value = String(m);
+      var lim = document.getElementById('lim-' + c.key);
+      if (ceiling < hardMax) {
+        lim.className = 'limit show';
+        lim.style.width = ((hardMax - ceiling) / (hardMax - MIN_FLOOR) * 100) + '%';
+        lim.title = 'Out of reach: the bank is empty at ' + ceiling + ' minutes.';
+      } else {
+        lim.className = 'limit';
+      }
+      document.getElementById('num-' + c.key).max = String(ceiling);
+      document.getElementById('num-' + c.key).value = String(m);
+      document.getElementById('up-' + c.key).disabled = m >= ceiling;
+      document.getElementById('dn-' + c.key).disabled = m <= MIN_FLOOR;
+
+      var tg = document.getElementById('tg-' + c.key);
+      tg.hidden = medicare;
+      if (!tg.hidden) {
+        document.getElementById('tval-' + c.key).textContent = String(u);
+        document.getElementById('tup-' + c.key).disabled = u >= c.cap || minMinutesFor(u + 1) > ceiling;
+        document.getElementById('tdn-' + c.key).disabled = u <= 1;
+      }
+
+      hint.className = 'hint';
+      if (medicare) {
+        hint.textContent = m >= hardMax ? 'This is as high as this code goes here.' : '';
+      } else {
+        hint.textContent = minMinutesFor(u) + ' to ' + Math.min(maxMinutesFor(u), maxMinutesFor(c.cap)) + ' minutes shows as ' + u + ' unit' + (u === 1 ? '' : 's') + '.';
+      }
+    });
+
+    renderSheet(result, showUnits);
+    renderWorking(result, showUnits, bill);
+
+    // message
+    var note = document.getElementById('sheetNote');
+    note.innerHTML = state.message ? '<div class="msg" style="margin-top:12px">' + state.message + '</div>' : '';
+
+    renderReference();
+  }
+
+  function renderSheet(result, showUnits) {
+    var rows = '', tm = 0, tu = 0, anyZero = false, any = false;
+    CODES.forEach(function (c) {
+      if (!state.checked[c.key]) return;
+      any = true;
+      var m = state.minutes[c.key] || 0;
+      var u = result.units[c.key] || 0;
+      tm += m; tu += u;
+      if (showUnits && u === 0) anyZero = true;
+      var ucell = showUnits ? (u + (u === 1 ? ' unit' : ' units')) : '&mdash;';
+      rows += '<tr' + (showUnits && u === 0 ? ' class="zero"' : '') + '><td>' + c.label + '</td><td>' + ucell + '</td><td>' + m + ' min</td></tr>';
+    });
+    if (!any) rows = '<tr><td colspan="3" style="color:var(--ink-3)">Check a code to start placing minutes.</td></tr>';
+    document.getElementById('sheet').innerHTML =
+      '<table><tbody>' + rows +
+      '<tr class="total"><td>Total</td><td>' + (showUnits ? tu + (tu === 1 ? ' unit' : ' units') : '&mdash;') + '</td><td>' + tm + ' min</td></tr></tbody></table>' +
+      (!showUnits && any ? '<p class="hint" style="margin-top:10px">Units are worked out once every minute is placed.</p>' : '') +
+      (anyZero ? '<div class="msg" style="margin-top:12px">One code came out at zero units. Its minutes are still listed above.</div>' : '');
+  }
+
+  function renderWorking(result, showUnits, bill) {
+    var wrap = document.getElementById('working');
+    var body = document.getElementById('workingBody');
+    var lines = (result.log || []).slice();
+    if (!showUnits || !lines.length) {
+      wrap.hidden = true;
+      return;
+    }
+    wrap.hidden = false;
+    var head = 'Starting point. ' + state.total + ' minute session' +
+      (state.nonBillable ? ' less ' + state.nonBillable + ' non-billable, leaving ' + bill + ' billable minutes.' : ', all ' + bill + ' minutes billable.');
+    body.innerHTML = '<ul class="worklist"><li class="head">' + head + '</li>' +
+      lines.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>';
+  }
+
+  var refDone = false;
+  function renderReference() {
+    if (refDone) return;
+    refDone = true;
+    var bands = '';
+    for (var u = 1; u <= 8; u++) {
+      bands += '<tr><td>' + minMinutesFor(u) + ' to ' + maxMinutesFor(u) + '</td><td>' + u + '</td></tr>';
+    }
+    document.getElementById('refBands').innerHTML = bands;
+    document.getElementById('refCaps').innerHTML = CODES.map(function (c) {
+      return '<tr><td>' + c.label + ' <span class="cpt">' + c.cpt + '</span></td><td>' + c.cap + '</td></tr>';
+    }).join('');
+  }
+
+  renderStep();
+})();
+</script>
+</body>
+</html>
